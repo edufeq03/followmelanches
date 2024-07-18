@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Follow me Lanches</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container text-center mt-5">
+        <h1>Follow me Lanches</h1>
+        <button id="start" class="btn btn-success mt-4" onclick="startGame()">Iniciar Jogo</button>
+        <div class="row mt-4 custom-container">
+            {% for name in names %}
+                {% if loop.index % 6 == 0 %}
+                    </div><div class="row mt-4">
+                {% endif %}
+                <div class="col custom-button">
+                    <button id="button{{ loop.index }}" class="btn btn-primary" onclick="userClick('{{ name }}', {{ loop.index }})">{{ name }}</button>
+                </div>
+            {% endfor %}
+        </div>
+        
+        <div id="status" class="mt-4"></div>
+        <div id="score" class="mt-2">Pontuação: 0</div>
+        <div id="leaderboard" class="mt-4">
+            <h3>Ranking</h3>
+            <ul id="leaderboard-list" class="list-group"></ul>
+        </div>
+        <div id="player-info-form" class="mt-4" style="display:none;">
+            <h3>Insira suas informações</h3>
+            <form id="player-form">
+                <div class="form-group">
+                    <label for="name">Nome</label>
+                    <input type="text" class="form-control" id="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="position">Cargo</label>
+                    <input type="text" class="form-control" id="position" required>
+                </div>
+                <div class="form-group">
+                    <label for="store_code">Sigla da Loja</label>
+                    <input type="text" class="form-control" id="store_code" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Enviar</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script>
+        const names = {{ names | tojson }};
+        let userSequence = [];
+        let correctSequence = [];
+        let score = 0;
+
+        function blinkButton(buttonId) {
+            $('#' + buttonId).fadeOut(500).fadeIn(500);
+        }
+
+        function showSequence(sequence) {
+            let i = 0;
+            const interval = setInterval(function() {
+                blinkButton('button' + (names.indexOf(sequence[i]) + 1));
+                i++;
+                if (i >= sequence.length) {
+                    clearInterval(interval);
+                }
+            }, 1000);
+        }
+
+        function startGame() {
+            $('#player-info-form').hide();
+            $.ajax({
+                url: '/reset_game',
+                type: 'POST',
+                success: function(response) {
+                    score = response.score;
+                    $('#score').text('Pontuação: ' + score);
+                    $.getJSON('/next_sequence', function(data) {
+                        correctSequence = data.sequence;
+                        showSequence(correctSequence);
+                        userSequence = [];
+                        $('#status').text('');
+                    });
+                }
+            });
+        }
+
+        function userClick(name, index) {
+            userSequence.push(name);
+            if (userSequence[userSequence.length - 1] !== correctSequence[userSequence.length - 1]) {
+                $('#status').text('Game Over. Pontuação final: ' + score);
+                $('#player-info-form').show();
+                return;
+            }
+            if (userSequence.length === correctSequence.length) {
+                checkSequence();
+            }
+        }
+
+        function checkSequence() {
+            $.ajax({
+                url: '/check_sequence',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({sequence: userSequence}),
+                success: function(response) {
+                    if (response.status === 'correct') {
+                        score = response.score;
+                        $('#score').text('Pontuação: ' + score);
+                        $('#status').text('Correto! Prepare-se para a próxima rodada.');
+                        setTimeout(function() {
+                            $('#status').text('');
+                            $.getJSON('/next_sequence', function(data) {
+                                correctSequence = data.sequence;
+                                showSequence(correctSequence);
+                                userSequence = [];
+                            });
+                        }, 1000);
+                    } else {
+                        $('#status').text('Incorreto. Pontuação final: ' + score);
+                        $('#player-info-form').show();
+                    }
+                }
+            });
+        }
+
+        function updateLeaderboard() {
+            $.getJSON('/leaderboard', function(data) {
+                const leaderboardList = $('#leaderboard-list');
+                leaderboardList.empty();
+                data.leaderboard.forEach(function(entry, index) {
+                    leaderboardList.append('<li class="list-group-item">#' + (index + 1) + ': ' + entry.name + ' (' + entry.position + ', ' + entry.store_code + ') - ' + entry.score + ' pontos</li>');
+                });
+            });
+        }
+
+        $('#player-form').on('submit', function(event) {
+            event.preventDefault();
+            const name = $('#name').val();
+            const position = $('#position').val();
+            const store_code = $('#store_code').val();
+            $.ajax({
+                url: '/add_score',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({name: name, position: position, store_code: store_code}),
+                success: function(response) {
+                    $('#player-info-form').hide();
+                    updateLeaderboard();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
